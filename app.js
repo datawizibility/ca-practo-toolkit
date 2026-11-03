@@ -52,6 +52,7 @@ const toolsConfig = {
 let clientFolderTargetHandle = null;
 let zipExtractorTargetHandle = null;
 let segregatorTargetHandle = null;
+let excelConverterTargetHandle = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   initApp();
@@ -74,6 +75,7 @@ function initApp() {
     clientFolderTargetHandle = null;
     zipExtractorTargetHandle = null;
     segregatorTargetHandle = null;
+    excelConverterTargetHandle = null;
     document.getElementById('resultsCard').style.display = 'none';
     document.getElementById('progressCard').style.display = 'none';
     loadTool(currentTool);
@@ -1069,22 +1071,202 @@ async function generateConsolidatedZip() {
 function renderExcelConverterForm(container) {
   container.innerHTML = `
     <div class="form-grid">
-      <div class="form-group">
-        <label>Select Spreadsheets to Convert</label>
+      <div class="form-group full-width">
+        <label>1. Select Spreadsheets to Convert</label>
         <div class="dropzone" id="dropzone_excel">
           <div class="dropzone-icon">📊</div>
-          <p>Drag & drop legacy Excel (.xls), .csv, .tsv, or .txt files</p>
+          <p>Drag & drop legacy Excel (.xls), .csv, .tsv, or .txt files or choose below</p>
           <small>Converts automatically to clean, modern OpenXML .xlsx</small>
-          <input type="file" id="excel_picker" multiple accept=".xls,.xlsx,.csv,.tsv,.txt" style="display: none;">
+
+          <div style="margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <button type="button" class="btn-browse" id="btnBrowseExcelFolder" style="font-size: 13px; padding: 9px 18px;">
+              📂 Browse Folder of Spreadsheets on PC
+            </button>
+            <button type="button" class="btn-secondary" id="btnBrowseExcelFiles" style="font-size: 13px; padding: 9px 18px;">
+              📄 Or Select Individual Files
+            </button>
+          </div>
+          <input type="file" id="excel_folder_picker" webkitdirectory directory multiple style="display: none;">
+          <input type="file" id="excel_file_picker" multiple accept=".xls,.xlsx,.csv,.tsv,.txt" style="display: none;">
         </div>
-        <div id="excel_count_badge" style="font-size: 12px; color: #a5b4fc; margin-top: 6px;"></div>
+        <div id="excel_count_badge" style="font-size: 13px; color: #a5b4fc; margin-top: 8px; font-weight: 500;"></div>
+      </div>
+
+      <div class="form-group full-width">
+        <label>2. Destination on Your Computer (Where to save converted .xlsx files?)</label>
+        <div class="destination-container">
+          <div class="destination-toggle">
+            <label class="radio-option" id="label_excel_direct">
+              <input type="radio" name="excel_dest_mode" value="direct" checked id="excel_mode_direct">
+              <div>
+                <strong>📁 Direct to PC Folder (Recommended)</strong>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Writes converted .xlsx workbooks directly into your chosen folder</div>
+              </div>
+            </label>
+            <label class="radio-option" id="label_excel_download">
+              <input type="radio" name="excel_dest_mode" value="zip" id="excel_mode_download">
+              <div>
+                <strong>📦 Download Converted ZIP</strong>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Package all converted files into a single .zip download</div>
+              </div>
+            </label>
+          </div>
+
+          <div id="direct_excel_picker_box" class="picker-box">
+            <div class="picker-details">
+              <div id="excel_target_dir_display" class="target-path-pill">
+                ${excelConverterTargetHandle ? `✓ Output Folder: ${excelConverterTargetHandle.name} (Direct disk writing ready)` : 'No folder chosen. Click Browse to select destination (e.g. D:\\Converted_XLSX)'}
+              </div>
+              <button type="button" id="browseExcelTargetBtn" class="btn-browse">
+                📁 Browse Destination Folder on PC
+              </button>
+            </div>
+            <span class="help-text">Converted Excel workbooks will be written directly into this folder on your computer (no re-zipping!).</span>
+          </div>
+        </div>
       </div>
     </div>
   `;
-  setupFileDropzone('dropzone_excel', 'excel_picker', (files) => {
-    selectedFiles = Array.from(files);
-    document.getElementById('excel_count_badge').innerText = `Selected ${selectedFiles.length} spreadsheets ready to convert.`;
-  });
+
+  // Folder browse
+  const btnFolder = document.getElementById('btnBrowseExcelFolder');
+  const folderInput = document.getElementById('excel_folder_picker');
+  if (btnFolder) {
+    btnFolder.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if ('showDirectoryPicker' in window) {
+        try {
+          const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+          showProgress(`Scanning folder "${dirHandle.name}"...`, 30);
+          const scanned = [];
+          for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'file') {
+              const file = await entry.getFile();
+              const ext = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+              if (['.xls', '.xlsx', '.csv', '.tsv', '.txt'].includes(ext)) {
+                scanned.push(file);
+              }
+            }
+          }
+          hideProgress();
+          selectedFiles = scanned;
+          document.getElementById('excel_count_badge').innerText = `✓ Selected Folder "${dirHandle.name}": Found ${selectedFiles.length} spreadsheet files ready to convert.`;
+          document.getElementById('excel_count_badge').style.color = '#34d399';
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error(err);
+            folderInput.click();
+          }
+        }
+      } else {
+        folderInput.click();
+      }
+    });
+  }
+
+  if (folderInput) {
+    folderInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        selectedFiles = Array.from(e.target.files).filter(f => {
+          const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+          return ['.xls', '.xlsx', '.csv', '.tsv', '.txt'].includes(ext);
+        });
+        document.getElementById('excel_count_badge').innerText = `✓ Selected Folder: Found ${selectedFiles.length} spreadsheet files ready to convert.`;
+        document.getElementById('excel_count_badge').style.color = '#34d399';
+      }
+    });
+  }
+
+  // Individual files browse
+  const btnFiles = document.getElementById('btnBrowseExcelFiles');
+  const fileInput = document.getElementById('excel_file_picker');
+  if (btnFiles) {
+    btnFiles.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        selectedFiles = Array.from(e.target.files);
+        document.getElementById('excel_count_badge').innerText = `✓ Selected ${selectedFiles.length} spreadsheet files ready to convert.`;
+        document.getElementById('excel_count_badge').style.color = '#34d399';
+      }
+    });
+  }
+
+  // Dropzone
+  const dropzone = document.getElementById('dropzone_excel');
+  if (dropzone) {
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('dragover');
+    });
+    dropzone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const files = await extractFilesFromDataTransfer(e.dataTransfer);
+      if (files && files.length > 0) {
+        selectedFiles = files.filter(f => {
+          const ext = f.name.substring(f.name.lastIndexOf('.')).toLowerCase();
+          return ['.xls', '.xlsx', '.csv', '.tsv', '.txt'].includes(ext);
+        });
+        document.getElementById('excel_count_badge').innerText = `✓ Dropped: Loaded ${selectedFiles.length} spreadsheet files ready to convert.`;
+        document.getElementById('excel_count_badge').style.color = '#34d399';
+      }
+    });
+  }
+
+  // Browse destination button
+  const btnBrowseDest = document.getElementById('browseExcelTargetBtn');
+  if (btnBrowseDest) {
+    btnBrowseDest.addEventListener('click', async () => {
+      await chooseExcelTargetDirectory();
+    });
+  }
+
+  const radioDirect = document.getElementById('excel_mode_direct');
+  const radioZip = document.getElementById('excel_mode_download');
+  const pickerBox = document.getElementById('direct_excel_picker_box');
+
+  if (radioDirect && radioZip && pickerBox) {
+    radioDirect.addEventListener('change', () => {
+      pickerBox.style.display = 'block';
+    });
+    radioZip.addEventListener('change', () => {
+      pickerBox.style.display = 'none';
+    });
+  }
+}
+
+async function chooseExcelTargetDirectory() {
+  if ('showDirectoryPicker' in window) {
+    try {
+      excelConverterTargetHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      const pill = document.getElementById('excel_target_dir_display');
+      if (pill) {
+        pill.innerText = `✓ Output Folder: ${excelConverterTargetHandle.name} (Direct disk writing ready)`;
+        pill.classList.add('selected');
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error(err);
+        alert('Could not access folder: ' + err.message);
+      }
+    }
+  } else {
+    alert('Direct PC folder writing requires Google Chrome or Microsoft Edge. On Firefox/Safari, please use the ZIP download option.');
+    const radioZip = document.getElementById('excel_mode_download');
+    if (radioZip) {
+      radioZip.checked = true;
+      document.getElementById('direct_excel_picker_box').style.display = 'none';
+    }
+  }
 }
 
 async function runExcelConverter() {
@@ -1098,6 +1280,104 @@ async function runExcelConverter() {
     return;
   }
 
+  const destMode = document.querySelector('input[name="excel_dest_mode"]:checked')?.value || 'direct';
+
+  if (destMode === 'direct') {
+    if (!('showDirectoryPicker' in window)) {
+      alert('Your browser does not support direct disk folder writing. Automatically switching to ZIP download.');
+      await generateExcelZip();
+      return;
+    }
+
+    if (!excelConverterTargetHandle) {
+      try {
+        excelConverterTargetHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        const pill = document.getElementById('excel_target_dir_display');
+        if (pill) {
+          pill.innerText = `✓ Output Folder: ${excelConverterTargetHandle.name} (Direct disk writing ready)`;
+          pill.classList.add('selected');
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        alert('Could not access destination folder: ' + err.message);
+        return;
+      }
+    }
+
+    showProgress(`Converting spreadsheets directly into "${excelConverterTargetHandle.name}" on your PC...`, 15);
+    const records = [];
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+      showProgress(`Converting ${file.name} to .xlsx...`, Math.round(15 + (i / selectedFiles.length) * 80));
+
+      try {
+        const buffer = await file.arrayBuffer();
+        const wb = XLSX.read(buffer, { type: 'array' });
+        const xlsxArray = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+        const xlsxBlob = new Blob([xlsxArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+        const fileHandle = await excelConverterTargetHandle.getFileHandle(`${baseName}.xlsx`, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(xlsxBlob);
+        await writable.close();
+
+        records.push({ fileName: file.name, sheets: wb.SheetNames.length, status: 'Success' });
+      } catch (err) {
+        records.push({ fileName: file.name, sheets: 0, status: 'Error: ' + err.message });
+      }
+    }
+
+    showProgress('All spreadsheets converted directly to your hard drive!', 100);
+    setTimeout(() => hideProgress(), 600);
+
+    let tableHtml = `
+      <table class="table-responsive">
+        <thead><tr><th>Original File</th><th>Worksheets</th><th>Status</th></tr></thead>
+        <tbody>
+    `;
+    records.forEach(r => {
+      tableHtml += `
+        <tr>
+          <td>${escapeHtml(r.fileName)}</td>
+          <td>${r.sheets} sheet(s)</td>
+          <td><span class="tag-badge ${r.status === 'Success' ? 'tag-success' : 'tag-error'}">${r.status}</span></td>
+        </tr>
+      `;
+    });
+    tableHtml += '</tbody></table>';
+
+    showResults(
+      `Conversion Complete: Converted ${records.filter(r => r.status === 'Success').length} of ${records.length} files to .xlsx in "${excelConverterTargetHandle.name}".`,
+      [
+        {
+          label: '📁 Change Destination Folder',
+          onClick: () => {
+            excelConverterTargetHandle = null;
+            const pill = document.getElementById('excel_target_dir_display');
+            if (pill) {
+              pill.innerText = 'No folder chosen. Click Browse to select destination (e.g. D:\\Converted_XLSX)';
+              pill.classList.remove('selected');
+            }
+          }
+        }
+      ],
+      `<div style="padding: 16px; background: rgba(16, 185, 129, 0.1); border-radius: 8px; color: #34d399; margin-bottom: 16px; line-height: 1.6;">
+        <strong>✓ Modern .XLSX Workbooks Created on Your PC (No ZIP Returned!):</strong><br>
+        • Target Destination: <code>${excelConverterTargetHandle.name}</code><br>
+        • Total Files Converted: <strong>${records.length}</strong><br><br>
+        <em>All workbooks have been written directly to your destination folder. Open Windows File Explorer to open them in Excel right now!</em>
+      </div>` + tableHtml
+    );
+    return;
+  }
+
+  // ZIP mode fallback
+  await generateExcelZip();
+}
+
+async function generateExcelZip() {
   showProgress('Converting spreadsheets to modern .xlsx...', 20);
   const zip = new JSZip();
   const records = [];
@@ -1153,120 +1433,113 @@ async function runExcelConverter() {
 function renderDuplicateFinderForm(container) {
   container.innerHTML = `
     <div class="form-grid">
-      <div class="form-group">
-        <label>Select Files to Inspect for Duplicates</label>
+      <div class="form-group full-width">
+        <label>Select Folder or Documents to Inspect for Duplicates</label>
         <div class="dropzone" id="dropzone_dups">
           <div class="dropzone-icon">🔍</div>
-          <p>Drag & drop documents or click to browse</p>
+          <p>Drag & drop a folder from your computer, or choose an option below</p>
           <small>Computes SHA-256 in memory via Web Crypto API</small>
-          <input type="file" id="dups_picker" multiple style="display: none;">
+
+          <div style="margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <button type="button" class="btn-browse" id="btnBrowseDupsFolder" style="font-size: 13px; padding: 9px 18px;">
+              📂 Browse Folder on PC to Scan
+            </button>
+            <button type="button" class="btn-secondary" id="btnBrowseDupsFiles" style="font-size: 13px; padding: 9px 18px;">
+              📄 Or Select Individual Files
+            </button>
+          </div>
+          <input type="file" id="dups_folder_picker" webkitdirectory directory multiple style="display: none;">
+          <input type="file" id="dups_file_picker" multiple style="display: none;">
         </div>
-        <div id="dups_count_badge" style="font-size: 12px; color: #a5b4fc; margin-top: 6px;"></div>
+        <div id="dups_count_badge" style="font-size: 13px; color: #a5b4fc; margin-top: 8px; font-weight: 500;"></div>
       </div>
     </div>
   `;
-  setupFileDropzone('dropzone_dups', 'dups_picker', (files) => {
-    selectedFiles = Array.from(files);
-    document.getElementById('dups_count_badge').innerText = `Selected ${selectedFiles.length} files to scan.`;
-  });
-}
 
-async function runDuplicateFinder() {
-  if (!selectedFiles || selectedFiles.length === 0) {
-    alert('Please select files to check for duplicates.');
-    return;
+  // Folder browse
+  const btnFolder = document.getElementById('btnBrowseDupsFolder');
+  const folderInput = document.getElementById('dups_folder_picker');
+  if (btnFolder) {
+    btnFolder.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if ('showDirectoryPicker' in window) {
+        try {
+          const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+          showProgress(`Scanning folder "${dirHandle.name}"...`, 30);
+          const scanned = [];
+          for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'file') {
+              const file = await entry.getFile();
+              scanned.push(file);
+            }
+          }
+          hideProgress();
+          selectedFiles = scanned;
+          document.getElementById('dups_count_badge').innerText = `✓ Selected Folder "${dirHandle.name}": Found ${selectedFiles.length} files to scan for duplicates.`;
+          document.getElementById('dups_count_badge').style.color = '#34d399';
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error(err);
+            folderInput.click();
+          }
+        }
+      } else {
+        folderInput.click();
+      }
+    });
   }
 
-  showProgress('Grouping files by byte size...', 20);
-
-  // Group by exact size
-  const sizeMap = {};
-  selectedFiles.forEach(f => {
-    if (f.size > 0) {
-      if (!sizeMap[f.size]) sizeMap[f.size] = [];
-      sizeMap[f.size].push(f);
-    }
-  });
-
-  const candidates = [];
-  Object.values(sizeMap).forEach(arr => {
-    if (arr.length > 1) {
-      candidates.push(...arr);
-    }
-  });
-
-  if (candidates.length === 0) {
-    hideProgress();
-    showResults('No duplicates found. All files have unique file sizes.', [], '<div style="padding: 16px; color: #34d399;">✅ Zero duplicate files found.</div>');
-    return;
+  if (folderInput) {
+    folderInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        selectedFiles = Array.from(e.target.files);
+        document.getElementById('dups_count_badge').innerText = `✓ Selected Folder: Found ${selectedFiles.length} files to scan for duplicates.`;
+        document.getElementById('dups_count_badge').style.color = '#34d399';
+      }
+    });
   }
 
-  showProgress(`Computing SHA-256 for ${candidates.length} candidate files...`, 50);
-
-  const hashMap = {};
-  const duplicates = [];
-  let wastedBytes = 0;
-
-  for (let i = 0; i < candidates.length; i++) {
-    const file = candidates[i];
-    const buffer = await file.arrayBuffer();
-    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-    const hashArray = Array.from(new Uint8Array(hashBuffer));
-    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
-
-    if (hashMap[hashHex]) {
-      wastedBytes += file.size;
-      duplicates.push({
-        duplicate: file.name,
-        original: hashMap[hashHex].name,
-        sizeMB: (file.size / (1024 * 1024)).toFixed(2),
-        sha256: hashHex
-      });
-    } else {
-      hashMap[hashHex] = file;
-    }
+  // Files browse
+  const btnFiles = document.getElementById('btnBrowseDupsFiles');
+  const fileInput = document.getElementById('dups_file_picker');
+  if (btnFiles) {
+    btnFiles.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
   }
 
-  hideProgress();
-
-  if (duplicates.length === 0) {
-    showResults('Scan complete: No duplicate files found.', [], '<div style="padding: 16px; color: #34d399;">✅ All files verified unique.</div>');
-    return;
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        selectedFiles = Array.from(e.target.files);
+        document.getElementById('dups_count_badge').innerText = `✓ Selected ${selectedFiles.length} files to scan for duplicates.`;
+        document.getElementById('dups_count_badge').style.color = '#34d399';
+      }
+    });
   }
 
-  const wastedMB = (wastedBytes / (1024 * 1024)).toFixed(2);
-
-  // Generate CSV data for export
-  let csvContent = 'OriginalFile,DuplicateFile,SizeMB,SHA256\n';
-  duplicates.forEach(d => {
-    csvContent += `"${d.original}","${d.duplicate}","${d.sizeMB}","${d.sha256}"\n`;
-  });
-  const csvBlob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-
-  let tableHtml = `
-    <table class="table-responsive">
-      <thead><tr><th>Original File</th><th>Duplicate Copy</th><th>Size</th><th>SHA-256 Match</th></tr></thead>
-      <tbody>
-  `;
-  duplicates.forEach(d => {
-    tableHtml += `
-      <tr>
-        <td>${escapeHtml(d.original)}</td>
-        <td><strong style="color: #fbbf24;">${escapeHtml(d.duplicate)}</strong></td>
-        <td>${d.sizeMB} MB</td>
-        <td><code style="font-size: 10px;">${d.sha256.substring(0, 16)}...</code></td>
-      </tr>
-    `;
-  });
-  tableHtml += '</tbody></table>';
-
-  showResults(
-    `Found ${duplicates.length} verified duplicate files (${wastedMB} MB wasted space).`,
-    [
-      { label: '📊 Download Duplicate Report (.CSV)', onClick: () => triggerDownload(csvBlob, 'Duplicate_Files_Report.csv') }
-    ],
-    tableHtml
-  );
+  // Dropzone
+  const dropzone = document.getElementById('dropzone_dups');
+  if (dropzone) {
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('dragover');
+    });
+    dropzone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const files = await extractFilesFromDataTransfer(e.dataTransfer);
+      if (files && files.length > 0) {
+        selectedFiles = files;
+        document.getElementById('dups_count_badge').innerText = `✓ Dropped: Loaded ${selectedFiles.length} files to scan for duplicates.`;
+        document.getElementById('dups_count_badge').style.color = '#34d399';
+      }
+    });
+  }
 }
 
 // -------------------------------------------------------------
@@ -1275,22 +1548,113 @@ async function runDuplicateFinder() {
 function renderAuditCheckerForm(container) {
   container.innerHTML = `
     <div class="form-grid">
-      <div class="form-group">
-        <label>Select Client Received Documents</label>
+      <div class="form-group full-width">
+        <label>Select Client Audit Folder or Received Documents</label>
         <div class="dropzone" id="dropzone_audit">
           <div class="dropzone-icon">📋</div>
-          <p>Drag & drop client papers (GST returns, Bank statements, Ledgers, 26AS)</p>
+          <p>Drag & drop client folder (GST returns, Bank statements, Ledgers, 26AS)</p>
           <small>Audits against mandatory statutory checklist</small>
-          <input type="file" id="audit_picker" multiple style="display: none;">
+
+          <div style="margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <button type="button" class="btn-browse" id="btnBrowseAuditFolder" style="font-size: 13px; padding: 9px 18px;">
+              📂 Browse Client Audit Folder on PC
+            </button>
+            <button type="button" class="btn-secondary" id="btnBrowseAuditFiles" style="font-size: 13px; padding: 9px 18px;">
+              📄 Or Select Individual Files
+            </button>
+          </div>
+          <input type="file" id="audit_folder_picker" webkitdirectory directory multiple style="display: none;">
+          <input type="file" id="audit_file_picker" multiple style="display: none;">
         </div>
-        <div id="audit_count_badge" style="font-size: 12px; color: #a5b4fc; margin-top: 6px;"></div>
+        <div id="audit_count_badge" style="font-size: 13px; color: #a5b4fc; margin-top: 8px; font-weight: 500;"></div>
       </div>
     </div>
   `;
-  setupFileDropzone('dropzone_audit', 'audit_picker', (files) => {
-    selectedFiles = Array.from(files);
-    document.getElementById('audit_count_badge').innerText = `Selected ${selectedFiles.length} client documents to evaluate.`;
-  });
+
+  // Folder browse
+  const btnFolder = document.getElementById('btnBrowseAuditFolder');
+  const folderInput = document.getElementById('audit_folder_picker');
+  if (btnFolder) {
+    btnFolder.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if ('showDirectoryPicker' in window) {
+        try {
+          const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+          showProgress(`Scanning folder "${dirHandle.name}"...`, 30);
+          const scanned = [];
+          for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'file') {
+              const file = await entry.getFile();
+              scanned.push(file);
+            }
+          }
+          hideProgress();
+          selectedFiles = scanned;
+          document.getElementById('audit_count_badge').innerText = `✓ Selected Client Folder "${dirHandle.name}": Found ${selectedFiles.length} client documents to evaluate.`;
+          document.getElementById('audit_count_badge').style.color = '#34d399';
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error(err);
+            folderInput.click();
+          }
+        }
+      } else {
+        folderInput.click();
+      }
+    });
+  }
+
+  if (folderInput) {
+    folderInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        selectedFiles = Array.from(e.target.files);
+        document.getElementById('audit_count_badge').innerText = `✓ Selected Client Folder: Found ${selectedFiles.length} client documents to evaluate.`;
+        document.getElementById('audit_count_badge').style.color = '#34d399';
+      }
+    });
+  }
+
+  // Files browse
+  const btnFiles = document.getElementById('btnBrowseAuditFiles');
+  const fileInput = document.getElementById('audit_file_picker');
+  if (btnFiles) {
+    btnFiles.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        selectedFiles = Array.from(e.target.files);
+        document.getElementById('audit_count_badge').innerText = `✓ Selected ${selectedFiles.length} client documents to evaluate.`;
+        document.getElementById('audit_count_badge').style.color = '#34d399';
+      }
+    });
+  }
+
+  // Dropzone
+  const dropzone = document.getElementById('dropzone_audit');
+  if (dropzone) {
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('dragover');
+    });
+    dropzone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const files = await extractFilesFromDataTransfer(e.dataTransfer);
+      if (files && files.length > 0) {
+        selectedFiles = files;
+        document.getElementById('audit_count_badge').innerText = `✓ Dropped: Loaded ${selectedFiles.length} client documents to evaluate.`;
+        document.getElementById('audit_count_badge').style.color = '#34d399';
+      }
+    });
+  }
 }
 
 async function runAuditChecker() {
