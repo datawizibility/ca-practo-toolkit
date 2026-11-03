@@ -51,6 +51,7 @@ const toolsConfig = {
 
 let clientFolderTargetHandle = null;
 let zipExtractorTargetHandle = null;
+let segregatorTargetHandle = null;
 
 document.addEventListener('DOMContentLoaded', () => {
   initApp();
@@ -72,6 +73,7 @@ function initApp() {
     selectedFiles = [];
     clientFolderTargetHandle = null;
     zipExtractorTargetHandle = null;
+    segregatorTargetHandle = null;
     document.getElementById('resultsCard').style.display = 'none';
     document.getElementById('progressCard').style.display = 'none';
     loadTool(currentTool);
@@ -349,48 +351,218 @@ async function generateZipPackage(clients, fys, subs) {
 function renderSegregatorForm(container) {
   container.innerHTML = `
     <div class="form-grid">
-      <div class="form-group">
-        <label>Select Mixed Files to Segregate</label>
+      <div class="form-group full-width">
+        <label>1. Select Source Folder or Files to Segregate</label>
         <div class="dropzone" id="dropzone_files">
           <div class="dropzone-icon">📁</div>
-          <p>Drag & drop mixed client files here, or click to browse</p>
-          <small>Accepts PDFs, Excels, Word, CSV, Images</small>
-          <input type="file" id="file_picker" multiple style="display: none;">
+          <p>Drag & drop a folder from your computer, or choose an option below</p>
+          <small>Accepts mixed folders with PDFs, Excels, Word, CSV, Scans</small>
+          
+          <div style="margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;">
+            <button type="button" class="btn-browse" id="btnBrowseSourceFolder" style="font-size: 13px; padding: 9px 18px;">
+              📂 Browse Entire Folder on PC
+            </button>
+            <button type="button" class="btn-secondary" id="btnBrowseSourceFiles" style="font-size: 13px; padding: 9px 18px;">
+              📄 Or Select Individual Files
+            </button>
+          </div>
+          <input type="file" id="seg_folder_picker" webkitdirectory directory multiple style="display: none;">
+          <input type="file" id="seg_file_picker" multiple style="display: none;">
         </div>
-        <div id="file_count_badge" style="font-size: 12px; color: #a5b4fc; margin-top: 6px;"></div>
+        <div id="file_count_badge" style="font-size: 13px; color: #a5b4fc; margin-top: 8px; font-weight: 500;"></div>
       </div>
-      <div class="form-group">
-        <label>Segregation Strategy</label>
+
+      <div class="form-group full-width">
+        <label>2. Segregation Strategy</label>
         <select id="seg_strategy">
           <option value="ByDocumentCategory">By Document Category (GST, Income Tax, Bank, TDS, ROC, Audit, Invoices)</option>
-          <option value="ByBank">By Bank Name (HDFC, SBI, ICICI, Axis, BOB, Kotak, etc.)</option>
+          <option value="ByBank">By Bank Name (HDFC, SBI, ICICI, Axis, BOB, Kotak, PNB, Canara, etc.)</option>
           <option value="ByFinancialYear">By Financial Year (FY 2024-25, FY 2025-26, etc.)</option>
           <option value="ByFileFormat">By File Format (PDF, Excel, Word, CSV)</option>
         </select>
       </div>
+
+      <div class="form-group full-width">
+        <label>3. Destination on Your Computer (Where to put the organized folders?)</label>
+        <div class="destination-container">
+          <div class="destination-toggle">
+            <label class="radio-option" id="label_seg_direct">
+              <input type="radio" name="seg_dest_mode" value="direct" checked id="seg_mode_direct">
+              <div>
+                <strong>📁 Direct to PC Folder (Recommended)</strong>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Creates categorized folders and writes files directly onto your hard drive</div>
+              </div>
+            </label>
+            <label class="radio-option" id="label_seg_download">
+              <input type="radio" name="seg_dest_mode" value="zip" id="seg_mode_download">
+              <div>
+                <strong>📦 Download Organized ZIP</strong>
+                <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">Package all categorized folders into a single .zip download</div>
+              </div>
+            </label>
+          </div>
+
+          <div id="direct_seg_picker_box" class="picker-box">
+            <div class="picker-details">
+              <div id="seg_target_dir_display" class="target-path-pill">
+                ${segregatorTargetHandle ? `✓ Output Folder: ${segregatorTargetHandle.name} (Direct disk writing ready)` : 'No folder chosen. Click Browse to select destination (e.g. D:\\Segregated_Documents)'}
+              </div>
+              <button type="button" id="browseSegTargetBtn" class="btn-browse">
+                📁 Browse Destination Folder on PC
+              </button>
+            </div>
+            <span class="help-text">Categorized subfolders will be created directly in this folder on your computer (no re-zipping!).</span>
+          </div>
+        </div>
+      </div>
     </div>
   `;
-  setupFileDropzone('dropzone_files', 'file_picker', (files) => {
-    selectedFiles = Array.from(files);
-    document.getElementById('file_count_badge').innerText = `Selected ${selectedFiles.length} files ready to classify.`;
-  });
+
+  // Button 1: Browse Entire Folder on PC
+  const btnFolder = document.getElementById('btnBrowseSourceFolder');
+  const folderInput = document.getElementById('seg_folder_picker');
+  if (btnFolder) {
+    btnFolder.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if ('showDirectoryPicker' in window) {
+        try {
+          const dirHandle = await window.showDirectoryPicker({ mode: 'read' });
+          showProgress(`Scanning folder "${dirHandle.name}"...`, 30);
+          const scanned = [];
+          for await (const entry of dirHandle.values()) {
+            if (entry.kind === 'file') {
+              const file = await entry.getFile();
+              scanned.push(file);
+            }
+          }
+          hideProgress();
+          selectedFiles = scanned;
+          document.getElementById('file_count_badge').innerText = `✓ Selected Folder "${dirHandle.name}": Found ${selectedFiles.length} files ready to classify.`;
+          document.getElementById('file_count_badge').style.color = '#34d399';
+        } catch (err) {
+          if (err.name !== 'AbortError') {
+            console.error(err);
+            folderInput.click();
+          }
+        }
+      } else {
+        folderInput.click();
+      }
+    });
+  }
+
+  if (folderInput) {
+    folderInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        selectedFiles = Array.from(e.target.files);
+        document.getElementById('file_count_badge').innerText = `✓ Selected Folder: Found ${selectedFiles.length} files ready to classify.`;
+        document.getElementById('file_count_badge').style.color = '#34d399';
+      }
+    });
+  }
+
+  // Button 2: Select Individual Files
+  const btnFiles = document.getElementById('btnBrowseSourceFiles');
+  const fileInput = document.getElementById('seg_file_picker');
+  if (btnFiles) {
+    btnFiles.addEventListener('click', (e) => {
+      e.stopPropagation();
+      fileInput.click();
+    });
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files.length > 0) {
+        selectedFiles = Array.from(e.target.files);
+        document.getElementById('file_count_badge').innerText = `✓ Selected ${selectedFiles.length} individual files ready to classify.`;
+        document.getElementById('file_count_badge').style.color = '#34d399';
+      }
+    });
+  }
+
+  // Dropzone drag and drop
+  const dropzone = document.getElementById('dropzone_files');
+  if (dropzone) {
+    dropzone.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+    dropzone.addEventListener('dragleave', () => {
+      dropzone.classList.remove('dragover');
+    });
+    dropzone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+      const files = await extractFilesFromDataTransfer(e.dataTransfer);
+      if (files && files.length > 0) {
+        selectedFiles = files;
+        document.getElementById('file_count_badge').innerText = `✓ Dropped: Loaded ${selectedFiles.length} files ready to classify.`;
+        document.getElementById('file_count_badge').style.color = '#34d399';
+      }
+    });
+  }
+
+  // Browse destination button
+  const btnBrowseDest = document.getElementById('browseSegTargetBtn');
+  if (btnBrowseDest) {
+    btnBrowseDest.addEventListener('click', async () => {
+      await chooseSegTargetDirectory();
+    });
+  }
+
+  const radioDirect = document.getElementById('seg_mode_direct');
+  const radioZip = document.getElementById('seg_mode_download');
+  const pickerBox = document.getElementById('direct_seg_picker_box');
+
+  if (radioDirect && radioZip && pickerBox) {
+    radioDirect.addEventListener('change', () => {
+      pickerBox.style.display = 'block';
+    });
+    radioZip.addEventListener('change', () => {
+      pickerBox.style.display = 'none';
+    });
+  }
+}
+
+async function chooseSegTargetDirectory() {
+  if ('showDirectoryPicker' in window) {
+    try {
+      segregatorTargetHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      const pill = document.getElementById('seg_target_dir_display');
+      if (pill) {
+        pill.innerText = `✓ Output Folder: ${segregatorTargetHandle.name} (Direct disk writing ready)`;
+        pill.classList.add('selected');
+      }
+    } catch (err) {
+      if (err.name !== 'AbortError') {
+        console.error(err);
+        alert('Could not access folder: ' + err.message);
+      }
+    }
+  } else {
+    alert('Direct PC folder writing requires Google Chrome or Microsoft Edge. On Firefox/Safari, please use the ZIP download option.');
+    const radioZip = document.getElementById('seg_mode_download');
+    if (radioZip) {
+      radioZip.checked = true;
+      document.getElementById('direct_seg_picker_box').style.display = 'none';
+    }
+  }
 }
 
 async function runSegregator() {
   if (!selectedFiles || selectedFiles.length === 0) {
-    alert('Please select files to segregate.');
+    alert('Please select a source folder or files to segregate.');
     return;
   }
 
   const strategy = document.getElementById('seg_strategy').value;
-  showProgress('Analyzing and classifying files...', 20);
-
-  const zip = new JSZip();
-  const records = [];
+  const destMode = document.querySelector('input[name="seg_dest_mode"]:checked')?.value || 'direct';
 
   const bankPatterns = {
     'HDFC': ['HDFC'], 'SBI': ['SBI', 'STATE BANK'], 'ICICI': ['ICICI'],
-    'Axis': ['AXIS'], 'BOB': ['BOB', 'BARODA'], 'Kotak': ['KOTAK']
+    'Axis': ['AXIS'], 'BOB': ['BOB', 'BARODA'], 'Kotak': ['KOTAK'],
+    'PNB': ['PNB', 'PUNJAB NATIONAL'], 'Canara': ['CANARA']
   };
 
   const docPatterns = {
@@ -402,6 +574,127 @@ async function runSegregator() {
     'Audit & Accounts': ['AUDIT', 'TRIAL BALANCE', 'LEDGER', 'BALANCE SHEET'],
     'Invoices & Bills': ['INVOICE', 'BILL', 'VOUCHER']
   };
+
+  function classify(file) {
+    const upperName = file.name.toUpperCase();
+    let category = 'Unclassified';
+
+    if (strategy === 'ByDocumentCategory') {
+      for (const [cat, keywords] of Object.entries(docPatterns)) {
+        if (keywords.some(kw => upperName.includes(kw))) {
+          category = cat;
+          break;
+        }
+      }
+    } else if (strategy === 'ByBank') {
+      for (const [bank, keywords] of Object.entries(bankPatterns)) {
+        if (keywords.some(kw => upperName.includes(kw))) {
+          category = bank;
+          break;
+        }
+      }
+    } else if (strategy === 'ByFinancialYear') {
+      const match = upperName.match(/(FY\s*20\d\d[-_]?\d\d|20\d\d[-_]\d\d|AY\s*20\d\d[-_]?\d\d)/);
+      if (match) category = match[1].replace('_', '-');
+    } else if (strategy === 'ByFileFormat') {
+      const ext = file.name.split('.').pop().toLowerCase();
+      category = ext.toUpperCase() + ' Files';
+    }
+    return category;
+  }
+
+  if (destMode === 'direct') {
+    if (!('showDirectoryPicker' in window)) {
+      alert('Your browser does not support direct disk folder writing. Automatically switching to ZIP download.');
+      await generateSegregatorZip(strategy, bankPatterns, docPatterns);
+      return;
+    }
+
+    if (!segregatorTargetHandle) {
+      try {
+        segregatorTargetHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        const pill = document.getElementById('seg_target_dir_display');
+        if (pill) {
+          pill.innerText = `✓ Output Folder: ${segregatorTargetHandle.name} (Direct disk writing ready)`;
+          pill.classList.add('selected');
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return;
+        alert('Could not access destination folder: ' + err.message);
+        return;
+      }
+    }
+
+    showProgress(`Segregating files directly into "${segregatorTargetHandle.name}" on your PC...`, 15);
+    const records = [];
+
+    for (let i = 0; i < selectedFiles.length; i++) {
+      const file = selectedFiles[i];
+      const category = classify(file);
+      showProgress(`Classifying ${file.name} -> ${category}...`, Math.round(15 + (i / selectedFiles.length) * 80));
+
+      const catHandle = await segregatorTargetHandle.getDirectoryHandle(category, { create: true });
+      const fileHandle = await catHandle.getFileHandle(file.name, { create: true });
+      const writable = await fileHandle.createWritable();
+      await writable.write(file);
+      await writable.close();
+
+      records.push({ fileName: file.name, category });
+    }
+
+    showProgress('All files segregated directly to your hard drive!', 100);
+    setTimeout(() => hideProgress(), 600);
+
+    let tableHtml = `
+      <table class="table-responsive">
+        <thead><tr><th>File Name</th><th>Classified Folder</th><th>Status</th></tr></thead>
+        <tbody>
+    `;
+    records.forEach(r => {
+      tableHtml += `
+        <tr>
+          <td>${escapeHtml(r.fileName)}</td>
+          <td><strong>${escapeHtml(r.category)}</strong></td>
+          <td><span class="tag-badge ${r.category !== 'Unclassified' ? 'tag-success' : 'tag-warning'}">${r.category !== 'Unclassified' ? 'Classified' : 'Unclassified'}</span></td>
+        </tr>
+      `;
+    });
+    tableHtml += '</tbody></table>';
+
+    showResults(
+      `Segregation Complete: Organized ${records.length} files directly into "${segregatorTargetHandle.name}".`,
+      [
+        {
+          label: '📁 Change Destination Folder',
+          onClick: () => {
+            segregatorTargetHandle = null;
+            const pill = document.getElementById('seg_target_dir_display');
+            if (pill) {
+              pill.innerText = 'No folder chosen. Click Browse to select destination (e.g. D:\\Segregated_Documents)';
+              pill.classList.remove('selected');
+            }
+          }
+        }
+      ],
+      `<div style="padding: 16px; background: rgba(16, 185, 129, 0.1); border-radius: 8px; color: #34d399; margin-bottom: 16px; line-height: 1.6;">
+        <strong>✓ Physical Files Segregated on Your PC (No ZIP Returned!):</strong><br>
+        • Target Destination: <code>${segregatorTargetHandle.name}</code><br>
+        • Total Files Classified: <strong>${records.length}</strong><br>
+        • Unique Category Subfolders Created: <strong>${new Set(records.map(r => r.category)).size}</strong><br><br>
+        <em>All files are neatly partitioned into subfolders on your computer. Open Windows File Explorer to access them right now!</em>
+      </div>` + tableHtml
+    );
+    return;
+  }
+
+  // ZIP download fallback
+  await generateSegregatorZip(strategy, bankPatterns, docPatterns);
+}
+
+async function generateSegregatorZip(strategy, bankPatterns, docPatterns) {
+  showProgress('Analyzing and classifying files...', 20);
+  const zip = new JSZip();
+  const records = [];
 
   for (let i = 0; i < selectedFiles.length; i++) {
     const file = selectedFiles[i];
@@ -1083,11 +1376,15 @@ function setupFileDropzone(dropzoneId, pickerId, onFilesSelected) {
   const dropzone = document.getElementById(dropzoneId);
   const picker = document.getElementById(pickerId);
 
-  dropzone.addEventListener('click', () => picker.click());
+  dropzone.addEventListener('click', (e) => {
+    // If click was on a button inside dropzone, don't trigger picker
+    if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
+    picker.click();
+  });
 
   picker.addEventListener('change', (e) => {
     if (e.target.files.length > 0) {
-      onFilesSelected(e.target.files);
+      onFilesSelected(Array.from(e.target.files));
     }
   });
 
@@ -1100,11 +1397,56 @@ function setupFileDropzone(dropzoneId, pickerId, onFilesSelected) {
     dropzone.classList.remove('dragover');
   });
 
-  dropzone.addEventListener('drop', (e) => {
+  dropzone.addEventListener('drop', async (e) => {
     e.preventDefault();
     dropzone.classList.remove('dragover');
-    if (e.dataTransfer.files.length > 0) {
-      onFilesSelected(e.dataTransfer.files);
+    const files = await extractFilesFromDataTransfer(e.dataTransfer);
+    if (files && files.length > 0) {
+      onFilesSelected(files);
+    }
+  });
+}
+
+async function extractFilesFromDataTransfer(dataTransfer) {
+  const files = [];
+  const items = dataTransfer.items;
+  if (items && items.length > 0) {
+    const queue = [];
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.webkitGetAsEntry) {
+        const entry = item.webkitGetAsEntry();
+        if (entry) queue.push(traverseFileTree(entry));
+      } else {
+        const file = item.getAsFile();
+        if (file) files.push(file);
+      }
+    }
+    if (queue.length > 0) {
+      const results = await Promise.all(queue);
+      results.forEach(arr => files.push(...arr));
+      return files;
+    }
+  }
+  if (dataTransfer.files && dataTransfer.files.length > 0) {
+    return Array.from(dataTransfer.files);
+  }
+  return files;
+}
+
+async function traverseFileTree(item) {
+  return new Promise((resolve) => {
+    if (item.isFile) {
+      item.file((file) => resolve([file]), () => resolve([]));
+    } else if (item.isDirectory) {
+      const dirReader = item.createReader();
+      dirReader.readEntries(async (entries) => {
+        const entriesPromises = entries.map(entry => traverseFileTree(entry));
+        const nestedFiles = await Promise.all(entriesPromises);
+        resolve(nestedFiles.flat());
+      }, () => resolve([]));
+    } else {
+      resolve([]);
     }
   });
 }
