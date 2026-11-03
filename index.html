@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CA Firm Automation Suite | CA PRACTO Edition</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- In-Browser Processing Libraries (Client-Side Only) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">⚡</div>
+        <div class="brand-text">
+          <h2>CA Automation Suite</h2>
+          <span>CA PRACTO Edition</span>
+        </div>
+      </div>
+
+      <div class="privacy-badge">
+        <span class="shield-icon">🛡️</span>
+        <div class="privacy-text">
+          <strong>100% Client-Side Privacy</strong>
+          <small>Files never leave your PC</small>
+        </div>
+      </div>
+
+      <div class="category-title">SELECT UTILITY</div>
+      <nav class="tool-nav" id="toolNav">
+        <button class="nav-item active" data-tool="client-folders">
+          <span class="nav-icon">📁</span>
+          <div class="nav-label">
+            <strong>Client Folder Generator</strong>
+            <small>Create FY & Departmental trees</small>
+          </div>
+        </button>
+
+        <button class="nav-item" data-tool="segregator">
+          <span class="nav-icon">🗂️</span>
+          <div class="nav-label">
+            <strong>Document Segregator</strong>
+            <small>Sort by Doc, Bank, FY, Period</small>
+          </div>
+        </button>
+
+        <button class="nav-item" data-tool="zip-extractor">
+          <span class="nav-icon">📦</span>
+          <div class="nav-label">
+            <strong>Bulk ZIP Extractor</strong>
+            <small>Unzip Bank, GST & Tally archives</small>
+          </div>
+        </button>
+
+        <button class="nav-item" data-tool="excel-converter">
+          <span class="nav-icon">📊</span>
+          <div class="nav-label">
+            <strong>Excel & CSV Converter</strong>
+            <small>Convert .xls, .csv, .tsv to .xlsx</small>
+          </div>
+        </button>
+
+        <button class="nav-item" data-tool="duplicate-finder">
+          <span class="nav-icon">🔍</span>
+          <div class="nav-label">
+            <strong>Duplicate Document Finder</strong>
+            <small>Cryptographic SHA-256 match</small>
+          </div>
+        </button>
+
+        <button class="nav-item" data-tool="audit-checker">
+          <span class="nav-icon">📋</span>
+          <div class="nav-label">
+            <strong>Audit Completeness Checker</strong>
+            <small>Checklist missing paper auditor</small>
+          </div>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <a href="https://github.com" target="_blank" class="github-link">
+          <span>⭐ Free & Open Source on GitHub</span>
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main Workspace -->
+    <main class="main-content">
+      <header class="topbar">
+        <div class="header-left">
+          <span class="pill-badge" id="currentToolCategory">File Management</span>
+          <h1 id="currentToolTitle">Client Folder & Financial Year Generator</h1>
+        </div>
+        <div class="header-right">
+          <span class="status-tag">
+            <span class="pulse-dot"></span> In-Browser Engine Active
+          </span>
+        </div>
+      </header>
+
+      <div class="workspace-body">
+        <!-- Interactive Tool Form Card -->
+        <section class="card config-card">
+          <p class="tool-desc" id="currentToolDesc">
+            Automatically generates standardized multi-tier client folders (GST, Audit, Income Tax, TDS, ROC, Bank) across Financial Years for an entire client list.
+          </p>
+
+          <div id="dynamicFormContainer">
+            <!-- Dynamically populated based on active tool -->
+          </div>
+
+          <div class="action-bar">
+            <button id="runBtn" class="btn-primary">
+              <span class="btn-icon">⚡</span> Run Utility
+            </button>
+            <button id="resetBtn" class="btn-secondary">
+              Reset
+            </button>
+          </div>
+        </section>
+
+        <!-- Progress & Live Status -->
+        <section class="card progress-card" id="progressCard" style="display: none;">
+          <div class="progress-header">
+            <span id="progressStatus">Processing files...</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress-bar-bg">
+            <div class="progress-bar-fill" id="progressBarFill"></div>
+          </div>
+        </section>
+
+        <!-- Output / Results Section -->
+        <section class="card results-card" id="resultsCard" style="display: none;">
+          <div class="results-header">
+            <div>
+              <h3>Execution Results</h3>
+              <span id="resultsSummaryText" class="results-summary">Ready</span>
+            </div>
+            <div id="resultsActions">
+              <!-- Dynamically populated download buttons -->
+            </div>
+          </div>
+          <div class="results-body" id="resultsBody">
+            <!-- Results table or log output -->
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
