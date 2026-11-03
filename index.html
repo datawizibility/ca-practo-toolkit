@@ -99,6 +99,9 @@
           <h1 id="currentToolTitle">Client Folder & Financial Year Generator</h1>
         </div>
         <div class="header-right">
+          <button id="manualBtn" class="btn-manual" title="View step-by-step Standard Operating Procedure">
+            <span>📖</span> User Manual & SOP
+          </button>
           <span class="status-tag">
             <span class="pulse-dot"></span> In-Browser Engine Active
           </span>
@@ -154,6 +157,22 @@
         </section>
       </div>
     </main>
+  </div>
+
+  <!-- User Manual & SOP Modal -->
+  <div class="modal-overlay" id="manualModal" style="display: none;">
+    <div class="modal-container">
+      <div class="modal-header">
+        <h3 id="manualModalTitle"><span>📖</span> Standard Operating Procedure (SOP)</h3>
+        <button class="modal-close-btn" id="closeManualBtn">&times;</button>
+      </div>
+      <div class="modal-tabs" id="manualTabs">
+        <!-- Dynamically rendered tabs for each utility -->
+      </div>
+      <div class="modal-body" id="manualModalBody">
+        <!-- Dynamically rendered SOP content -->
+      </div>
+    </div>
   </div>
 
   <script src="app.js"></script>
